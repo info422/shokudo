@@ -3,42 +3,40 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>食堂受付システム</title>
+  <title>食堂連続受付システム</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body { font-family: sans-serif; text-align: center; padding: 20px; background: #eef2f3; margin: 0; }
     #reader { width: 100%; max-width: 450px; margin: auto; border-radius: 20px; overflow: hidden; background: #000; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
-    .btn { padding: 25px; font-size: 1.5em; background: #1a73e8; color: white; border: none; border-radius: 15px; width: 100%; max-width: 450px; margin-top: 20px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    #status { margin-top: 20px; padding: 30px; border-radius: 20px; display: none; color: white; font-weight: bold; font-size: 1.8em; line-height: 1.4; box-shadow: 0 8px 15px rgba(0,0,0,0.1); }
-    .footer-msg { margin-top: 15px; color: #666; font-size: 0.9em; }
+    .btn { padding: 25px; font-size: 1.5em; background: #1a73e8; color: white; border: none; border-radius: 15px; width: 100%; max-width: 450px; margin-top: 20px; font-weight: bold; }
+    #status { margin-top: 20px; padding: 30px; border-radius: 20px; display: none; color: white; font-weight: bold; font-size: 1.8em; line-height: 1.4; }
+    #timer { font-size: 0.6em; margin-top: 10px; opacity: 0.8; }
   </style>
 </head>
 <body>
-  <h2 style="color:#333; margin-bottom:10px;">🍴ミロ受付</h2>
+  <h2 style="color:#333; margin-bottom:10px;">🍴 受付（自動続行モード）</h2>
   <div id="reader"></div>
   <button id="startBtn" class="btn" onclick="start()">📷 受付を開始する</button>
   <div id="status"></div>
-  <div class="footer-msg">※音が鳴らない場合は、本体横のスイッチを確認してください</div>
 
   <script>
     // ★事務員さんの最新GASのURLに貼り替えてください
-    const API_URL = "https://script.google.com/macros/s/AKfycbwfLVE77or2tD9WPaJX2Ks3uc5KtaknUQKrBFhFXUWbJYBa682O2Hj0HAhxBfkEu2eOoQ/exec"; // ここを最新に！
+    const API_URL = "https://script.google.com/macros/s/AKfycbwW6M8v6E1VlY8e2Xv2qR8z-V8pP8S7e0X7m/exec"; 
 
     let audioCtx = null;
+    let html5QrCode = null;
 
-    // 音を鳴らす関数（iOS対応版）
     function playSound(type) {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain); gain.connect(audioCtx.destination);
-      
-      if (type === 'ok') { // ピッ（成功音）
+      if (type === 'ok') {
         osc.type = 'sine'; osc.frequency.setValueAtTime(880, audioCtx.currentTime);
         gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
         osc.start(); osc.stop(audioCtx.currentTime + 0.2);
-      } else { // ブーー（エラー音）
+      } else {
         osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, audioCtx.currentTime);
         gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
@@ -47,29 +45,31 @@
     }
 
     function start() {
-      // iOSではボタンを押した瞬間にAudioContextを有効にする必要があります
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
-
       document.getElementById('startBtn').style.display = 'none';
-      const scanner = new Html5Qrcode("reader");
       
+      if(!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+      launchScanner();
+    }
+
+    function launchScanner() {
       const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-      
-      scanner.start({ facingMode: "environment" }, config, (id) => {
-        const s = document.getElementById('status');
-        s.style.display = 'block'; s.style.background = '#666'; s.innerHTML = "照会中...";
-        
-        // GASへ問い合わせ
-        const script = document.createElement('script');
-        script.src = `${API_URL}?id=${encodeURIComponent(id)}&callback=onResult`;
-        document.body.appendChild(script);
-        
-        scanner.stop(); // 連続スキャン防止のため一旦停止
-      }).catch(err => {
-        alert("カメラ起動エラー: " + err);
-        document.getElementById('startBtn').style.display = 'block';
+      html5QrCode.start({ facingMode: "environment" }, config, (id) => {
+        // 読み取り成功時
+        html5QrCode.stop().then(() => {
+          processId(id);
+        });
       });
+    }
+
+    function processId(id) {
+      const s = document.getElementById('status');
+      s.style.display = 'block'; s.style.background = '#666'; s.innerHTML = "照会中...";
+      
+      const script = document.createElement('script');
+      script.src = `${API_URL}?id=${encodeURIComponent(id)}&callback=onResult`;
+      document.body.appendChild(script);
     }
 
     window.onResult = function(res) {
@@ -77,19 +77,25 @@
       if (res.success) {
         playSound('ok');
         s.style.background = '#28a745';
-        s.innerHTML = "✅ OK！<br>" + res.msg.replace(/\n/g, "<br>");
+        s.innerHTML = "✅ OK！<br>" + res.msg.replace(/\n/g, "<br>") + "<div id='timer'>3秒後に次の方...</div>";
       } else {
         playSound('error');
         s.style.background = '#dc3545';
-        s.innerHTML = "❌ エラー<br>" + res.msg.replace(/\n/g, "<br>");
+        s.innerHTML = "❌ エラー<br>" + res.msg.replace(/\n/g, "<br>") + "<div id='timer'>3秒後に次の方...</div>";
       }
       
-      // 5秒後に元の画面（スキャン開始ボタン）に戻す
-      setTimeout(() => {
-        s.style.display = 'none';
-        document.getElementById('startBtn').style.display = 'block';
-        document.getElementById('startBtn').innerText = "📷 次の方をスキャン";
-      }, 5000);
+      // ★3秒後に自動でカメラを再起動する処理
+      let count = 3;
+      const interval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          document.getElementById('timer').innerText = count + "秒後に次の方...";
+        } else {
+          clearInterval(interval);
+          s.style.display = 'none';
+          launchScanner(); // カメラを再起動
+        }
+      }, 1000);
     };
   </script>
 </body>
