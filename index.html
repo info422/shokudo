@@ -1,48 +1,69 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>食堂QRスキャナー</title>
+  <title>受付</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f4f7f6; }
+    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f4f8; }
     #reader { width: 100%; max-width: 400px; margin: auto; border-radius: 15px; overflow: hidden; background: #000; min-height: 300px; }
-    .btn { padding: 20px; font-size: 1.2em; background: #007bff; color: white; border: none; border-radius: 12px; width: 100%; max-width: 400px; margin-top: 20px; font-weight: bold; }
-    #status { margin-top: 15px; padding: 20px; border-radius: 12px; display: none; color: white; font-weight: bold; font-size: 1.2em; }
+    .btn { padding: 25px; font-size: 1.4em; background: #007bff; color: white; border: none; border-radius: 15px; width: 100%; max-width: 400px; margin-top: 20px; font-weight: bold; }
+    #status { margin-top: 20px; padding: 30px; border-radius: 15px; display: none; color: white; font-weight: bold; font-size: 1.5em; line-height: 1.5; }
   </style>
 </head>
 <body>
-  <h2>Ｍランド丹波ささ山 ＭＩＲＯ受付</h2>
+  <h2 style="color:#333;">MIROQR受付</h2>
   <div id="reader"></div>
   <button id="startBtn" class="btn" onclick="start()">📷 スキャン開始</button>
   <div id="status"></div>
 
   <script>
-    // ★事務員さんのGASのURL（/exec）に書き換えてください
-    const API_URL = "https://script.google.com/macros/s/AKfycbwfLVE77or2tD9WPaJX2Ks3uc5KtaknUQKrBFhFXUWbJYBa682O2Hj0HAhxBfkEu2eOoQ/exec";
+    // ★新しいGASのURLをここに貼り付け
+    const API_URL = "ここに新しいデプロイURLを貼り付け";
+
+    // 音の設定
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      if (type === 'ok') { // ピッ
+        osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        osc.start(); osc.stop(ctx.currentTime + 0.2);
+      } else { // ブーッ
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start(); osc.stop(ctx.currentTime + 0.5);
+      }
+    }
 
     function start() {
+      ctx.resume(); // iOS対策
       document.getElementById('startBtn').style.display = 'none';
       const scanner = new Html5Qrcode("reader");
       scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (id) => {
         const s = document.getElementById('status');
         s.style.display = 'block'; s.style.background = '#666'; s.innerHTML = "照会中...";
-        
-        // GASへデータを飛ばす（JSONP方式）
         const script = document.createElement('script');
         script.src = `${API_URL}?id=${encodeURIComponent(id)}&callback=onResult`;
         document.body.appendChild(script);
-      }).catch(e => {
-        alert("カメラ起動エラー: " + e);
-        document.getElementById('startBtn').style.display = 'block';
+        scanner.stop(); // 一旦止める
       });
     }
 
     window.onResult = function(res) {
       const s = document.getElementById('status');
-      s.style.background = res.success ? '#28a745' : '#dc3545';
-      s.innerHTML = res.success ? "✅ OK！<br>" + res.msg : "❌ " + res.msg;
+      if (res.success) {
+        playSound('ok');
+        s.style.background = '#28a745';
+        s.innerHTML = "✅ OK！<br>" + res.msg.replace(/\n/g, "<br>");
+      } else {
+        playSound('error');
+        s.style.background = '#dc3545';
+        s.innerHTML = "❌ " + res.msg.replace(/\n/g, "<br>");
+      }
       setTimeout(() => {
         s.style.display = 'none';
         document.getElementById('startBtn').style.display = 'block';
